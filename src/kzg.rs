@@ -72,6 +72,11 @@ impl Kzg {
         }
     }
 
+    /// Returns the maximum degree of the polinomial commitment
+    pub fn max_degree(&self) -> usize {
+        self.pow_tau_g1.len() - 1
+    }
+
     /// Generate a polinomial and its commitment from a `set` of points
     #[allow(non_snake_case)]
     pub fn poly_commitment_from_set(&self, set: &[(Scalar, Scalar)]) -> (Poly, Commitment) {
