@@ -1,5 +1,5 @@
 [package]
-name = "polyc"
+name = "kzgrs"
 version = "0.1.0"
 authors = ["adria0 <nowhere@>"]
 edition = "2018"
