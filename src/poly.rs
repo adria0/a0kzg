@@ -1,15 +1,52 @@
+//! This module provides an implementation of polinomials over bls12_381::Scalar
+
 use bls12_381::Scalar;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Poly(pub Vec<Scalar>);
+pub struct Poly(pub(crate) Vec<Scalar>);
 
 impl Poly {
+    /// Creates a new Poly from its `coeffs`icients, first element the coefficient for x^0
+    /// for safetly, input value is normalized (trailing zeroes are removed)
     pub fn new(coeffs: Vec<Scalar>) -> Self {
         let mut poly = Poly(coeffs);
         poly.normalize();
         poly
     }
 
+    /// Creates a new polinomial where the `coeffs` fits in u64 values
+    pub fn from(coeffs: &[u64]) -> Self {
+        Poly::new(
+            coeffs
+                .iter()
+                .map(|n| Scalar::from(*n))
+                .collect::<Vec<Scalar>>(),
+        )
+    }
+    /// Returns p(x)=0
+    pub fn zero() -> Self {
+        Poly(vec![Scalar::zero()])
+    }
+
+    /// Returns p(x)=1
+    pub fn one() -> Self {
+        Poly(vec![Scalar::one()])
+    }
+
+    /// Creates a polinomial that contains a set of `p` points, by using lagrange
+    /// see https://en.wikipedia.org/wiki/Lagrange_polynomial
+    /// # Examples
+    /// ```
+    ///    use a0kzg::{Poly, Scalar};
+    ///    // f(x)=x is a polinomial that fits in (1,1), (2,2) points
+    ///    assert_eq!(
+    ///      Poly::lagrange(&vec![
+    ///          (Scalar::from(1), Scalar::from(1)),
+    ///          (Scalar::from(2), Scalar::from(2))
+    ///      ]),
+    ///      Poly::from(&[0, 1]) // f(x) = x
+    ///    );
+    /// ```
     pub fn lagrange(p: &[(Scalar, Scalar)]) -> Self {
         let k = p.len();
         let mut l = Poly::zero();
@@ -26,7 +63,16 @@ impl Poly {
         l
     }
 
-    pub fn eval(&self, x: Scalar) -> Scalar {
+    /// Evals the polinomial at the desired point
+    /// # Examples
+    /// ```
+    ///    use a0kzg::{Poly, Scalar};
+    ///    // check that (x^2+2x+1)(2) = 9
+    ///    assert_eq!(
+    ///      Poly::from(&[1, 2, 1]).eval(&Scalar::from(2)),
+    ///      Scalar::from(9));
+    /// ```
+    pub fn eval(&self, x: &Scalar) -> Scalar {
         let mut x_pow = Scalar::one();
         let mut y = self.0[0];
         for (i, _) in self.0.iter().enumerate().skip(1) {
@@ -36,6 +82,7 @@ impl Poly {
         y
     }
 
+    /// Evals the polinomial suplying the `x_pows` x^0, x^1, x^2
     pub fn eval_with_pows(&self, x_pow: &[Scalar]) -> Scalar {
         let mut y = self.0[0];
         for (i, _) in self.0.iter().enumerate() {
@@ -44,18 +91,20 @@ impl Poly {
         y
     }
 
+    /// Returns the degree of the polinominal, degree(x+1) = 1
     pub fn degree(&self) -> usize {
         self.0.len() - 1
     }
-    pub fn from(coeffs: &[u64]) -> Self {
-        Poly::new(
-            coeffs
-                .iter()
-                .map(|n| Scalar::from(*n))
-                .collect::<Vec<Scalar>>(),
-        )
-    }
-    fn normalize(&mut self) {
+
+    /// Normalizes the coefficients, removing ending zeroes
+    /// # Examples
+    /// ```
+    ///    use a0kzg::Poly;
+    ///    let mut p1 = Poly::from(&[1, 0, 0, 0]);
+    ///    p1.normalize();
+    ///    assert_eq!(p1, Poly::from(&[1]));
+    /// ```
+    pub fn normalize(&mut self) {
         if self.0.len() > 1 && self.0[self.0.len() - 1] == Scalar::zero() {
             let zero = Scalar::zero();
             let first_non_zero = self.0.iter().rev().position(|p| p != &zero);
@@ -66,40 +115,48 @@ impl Poly {
             }
         }
     }
+
+    /// Returns if p(x)=0
+    /// # Examples
+    /// ```
+    ///    use a0kzg::Poly;
+    ///    assert!(Poly::zero().is_zero());
+    ///    assert!(!Poly::one().is_zero());
+    /// ```
     pub fn is_zero(&self) -> bool {
         self.0.len() == 1 && self.0[0] == Scalar::zero()
     }
-    pub fn zero() -> Self {
-        Poly(vec![Scalar::zero()])
-    }
-    pub fn one() -> Self {
-        Poly(vec![Scalar::one()])
-    }
+
+    /// Sets the `i`-th coefficient to the selected `p` value
+    /// # Examples
+    /// ``
+    ///   use a0kzg::{Poly, Scalar};
+    ///   let mut p007 = Poly::zero();
+    ///   p007.set(2, Scalar::from(7));
+    ///   assert_eq!(p007, Poly::from(&[0, 0, 7]));
+    ///  ```
     pub fn set(&mut self, i: usize, p: Scalar) {
         if self.0.len() < i + 1 {
             self.0.resize(i + 1, Scalar::zero());
         }
         self.0[i] = p;
+        self.normalize();
     }
 
+    /// Returns the `i`-th coefficient
+    /// # Examples
+    /// ```
+    ///   use a0kzg::{Poly, Scalar};
+    ///   let mut p007 = Poly::zero();
+    ///   p007.set(2, Scalar::from(7));
+    ///   assert_eq!(p007.get(2), Some(&Scalar::from(7)));
+    ///   assert_eq!(p007.get(3), None);
+    ///  ```
     pub fn get(&mut self, i: usize) -> Option<&Scalar> {
         self.0.get(i)
     }
-
-    pub fn div(self, d: &Poly) -> (Self, Self) {
-        let (mut q, mut r) = (Poly::zero(), self);
-        while !r.is_zero() && r.degree() >= d.degree() {
-            let lead_r = r.0[r.0.len() - 1];
-            let lead_d = d.0[d.0.len() - 1];
-            let mut t = Poly::zero();
-            t.set(r.0.len() - d.0.len(), lead_r * lead_d.invert().unwrap());
-            q += &t;
-            r -= &(d * &t);
-        }
-
-        (q, r)
-    }
 }
+
 impl std::fmt::Display for Poly {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first: bool = true;
@@ -195,6 +252,23 @@ impl std::ops::Mul<&Scalar> for &Poly {
     }
 }
 
+impl std::ops::Div for Poly {
+    type Output = (Poly, Poly);
+
+    fn div(self, rhs: Poly) -> Self::Output {
+        let (mut q, mut r) = (Poly::zero(), self);
+        while !r.is_zero() && r.degree() >= rhs.degree() {
+            let lead_r = r.0[r.0.len() - 1];
+            let lead_d = rhs.0[rhs.0.len() - 1];
+            let mut t = Poly::zero();
+            t.set(r.0.len() - rhs.0.len(), lead_r * lead_d.invert().unwrap());
+            q += &t;
+            r -= &(&rhs * &t);
+        }
+        (q, r)
+    }
+}
+
 #[test]
 fn test_poly_add() {
     let mut p246 = Poly::from(&[1, 2, 3]);
@@ -230,49 +304,20 @@ fn test_poly_mul() {
 }
 
 #[test]
-fn test_normalize() {
-    let mut p1 = Poly::from(&[1, 0, 0, 0]);
-    p1.normalize();
-    assert_eq!(p1, Poly::from(&[1]));
-    p1.normalize();
-    assert_eq!(p1, Poly::from(&[1]));
-}
-
-#[test]
-fn test_get_set() {
-    let mut p007 = Poly::zero();
-    p007.set(2, Scalar::from(7));
-    assert_eq!(p007, Poly::from(&[0, 0, 7]));
-    assert_eq!(p007.get(2), Some(&Scalar::from(7)));
-}
-
-#[test]
 fn test_div() {
     fn do_test(n: Poly, d: Poly) {
-        let (q, r) = n.clone().div(&d);
+        let (q, r) = n.clone() / d.clone();
         let mut n2 = &q * &d;
         n2 += &r;
         assert_eq!(n, n2);
     }
 
-    assert_eq!(
-        (Poly::from(&[1, 1]), Poly::zero()),
-        Poly::from(&[1, 2, 1]).div(&Poly::from(&[1, 1]))
-    );
     do_test(Poly::from(&[1]), Poly::from(&[1, 1]));
     do_test(Poly::from(&[1, 1]), Poly::from(&[1, 1]));
     do_test(Poly::from(&[1, 2, 1]), Poly::from(&[1, 1]));
     do_test(
         Poly::from(&[1, 2, 1, 2, 5, 8, 1, 9]),
         Poly::from(&[1, 1, 5, 4]),
-    );
-}
-
-#[test]
-fn test_eval() {
-    assert_eq!(
-        Poly::from(&[1, 2, 1]).eval(Scalar::from(2)),
-        Scalar::from(9)
     );
 }
 
@@ -298,17 +343,6 @@ fn test_print() {
 }
 
 #[test]
-fn test_lagrange_minimal() {
-    assert_eq!(
-        Poly::lagrange(&vec![
-            (Scalar::from(1), Scalar::from(1)),
-            (Scalar::from(2), Scalar::from(2))
-        ]),
-        Poly::from(&[0, 1])
-    );
-}
-
-#[test]
 fn test_lagrange_multi() {
     let points = vec![
         (Scalar::from(12342), Scalar::from(22342)),
@@ -317,5 +351,5 @@ fn test_lagrange_multi() {
         (Scalar::from(483838), Scalar::from(444444)),
     ];
     let l = Poly::lagrange(&points);
-    points.iter().for_each(|p| assert_eq!(l.eval(p.0), p.1));
+    points.iter().for_each(|p| assert_eq!(l.eval(&p.0), p.1));
 }

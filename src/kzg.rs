@@ -1,5 +1,6 @@
+//! this module contains an implementation of Kate-Zaverucha-Goldberg polynomial commitments
+
 use super::poly::Poly;
-pub use bls12_381::Scalar;
 use bls12_381::*;
 use rand::Rng;
 
@@ -36,6 +37,9 @@ impl Kzg {
         })
     }
 
+    /// Generate the trusted setup. Is expected that this function is called
+    ///   in a safe evironment what will be destroyed after its execution
+    /// The `n` parameter is the maximum number of points that can be proved
     pub fn trusted_setup(n: usize) -> Self {
         let mut rng = rand::thread_rng();
         let rnd: [u64; 4] = [rng.gen(), rng.gen(), rng.gen(), rng.gen()];
@@ -67,7 +71,7 @@ impl Kzg {
         }
     }
 
-    /// generate a polinomial and its commitment from a `set` of points
+    /// Generate a polinomial and its commitment from a `set` of points
     #[allow(non_snake_case)]
     pub fn poly_commitment_from_set(&self, set: &[(Scalar, Scalar)]) -> (Poly, Commitment) {
         let poly = Poly::lagrange(set);
@@ -89,7 +93,7 @@ impl Kzg {
         // also check that the division does not have remainder
         let mut poly = poly.clone();
         poly -= &I;
-        let (Q, remainder) = poly.div(&Z);
+        let (Q, remainder) = poly / Z;
         assert!(remainder.is_zero());
 
         // the proof is evaluating the Q at tau in G1
@@ -97,8 +101,37 @@ impl Kzg {
     }
 
     /// Verifies that `points` exists in `proof`
-    /// is the duty of the caller to check if `proof.commitment` belongs
-    ///    to the full set
+    /// # Example
+    /// ```
+    /// use a0kzg::{Scalar, Kzg};
+    /// // Create a trustd setup that allows maximum 4 points (degree+1)
+    /// let kzg = Kzg::trusted_setup(5);
+    ///
+    /// // define the set of points (the "population"), and create a polinomial
+    /// // for them, as well its polinomial commitment, see the polinomial commitment
+    /// // like the "hash" of the polinomial
+    /// let set = vec![
+    ///    (Scalar::from(1), Scalar::from(2)),
+    ///    (Scalar::from(2), Scalar::from(3)),
+    ///    (Scalar::from(3), Scalar::from(4)),
+    ///    (Scalar::from(4), Scalar::from(57)),
+    /// ];
+    /// let (p, c) = kzg.poly_commitment_from_set(&set);
+    ///
+    /// // generate a proof that (1,2) and (2,3) are in the set
+    /// let proof01 = kzg.prove(&p, &vec![set[0].clone(), set[1].clone()]);
+    ///  
+    /// // prove that (1,2) and (2,3) are in the set
+    /// assert!(kzg.verify(&c, &vec![set[0].clone(), set[1].clone()], &proof01));
+    /// // other proofs will fail since the proof only works for exactly (1,2) AND (2,3)
+    /// assert!(!kzg.verify(&c, &vec![set[0].clone()], &proof01));
+    /// assert!(!kzg.verify(&c, &vec![set[0].clone(), set[2].clone()], &proof01));
+    ///
+    /// // prove and verify that the whole set exists in the whole set
+    /// let proof0123 = kzg.prove(&p, &set);
+    /// assert!(kzg.verify(&c, &set, &proof0123));
+    /// ```
+
     #[allow(non_snake_case)]
     pub fn verify(
         &self,
@@ -117,24 +150,4 @@ impl Kzg {
         );
         e1 == e2
     }
-}
-
-#[test]
-fn test_multi_proof() {
-    let kzg = Kzg::trusted_setup(5);
-    let set = vec![
-        (Scalar::from(1), Scalar::from(2)),
-        (Scalar::from(2), Scalar::from(3)),
-        (Scalar::from(3), Scalar::from(4)),
-        (Scalar::from(4), Scalar::from(57)),
-    ];
-    let (p, c) = kzg.poly_commitment_from_set(&set);
-
-    let proof01 = kzg.prove(&p, &vec![set[0].clone(), set[1].clone()]);
-    assert!(kzg.verify(&c, &vec![set[0].clone(), set[1].clone()], &proof01));
-    assert!(!kzg.verify(&c, &vec![set[0].clone()], &proof01));
-    assert!(!kzg.verify(&c, &vec![set[0].clone(), set[2].clone()], &proof01));
-
-    let proof0123 = kzg.prove(&p, &set);
-    assert!(kzg.verify(&c, &set, &proof0123));
 }
