@@ -4,9 +4,10 @@ use super::poly::Poly;
 use bls12_381::*;
 use rand::Rng;
 
+/// KZG polinomial commitments on Bls12-381. This structure contains the trusted setup.
 pub struct Kzg {
-    pow_tau_g1: Vec<G1Projective>,
-    pow_tau_g2: Vec<G2Projective>,
+    pub pow_tau_g1: Vec<G1Projective>,
+    pub pow_tau_g2: Vec<G2Projective>,
 }
 
 pub type Proof = G1Projective;

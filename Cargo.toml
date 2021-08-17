@@ -1,6 +1,6 @@
 [package]
 name = "a0kzg"
-version = "0.1.0"
+version = "0.1.1"
 description = "ZKG polinomial commitments playground"
 repository = "https://github.com/adria0/a0kzg"
 documentation = "https://docs.rs/a0kzg/"

@@ -2,6 +2,7 @@
 
 use bls12_381::Scalar;
 
+/// A polinomial with bl12_381::Scalar factors
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Poly(pub(crate) Vec<Scalar>);
 
