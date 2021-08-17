@@ -8,7 +8,7 @@ It uses the fantastic [bls12_381 crate](https://github.com/zkcrypto/bls12_381)
 
 ## KZG Example
 
-```
+```rust
 use a0kzg::{Scalar, Kzg};
 // Create a trustd setup that allows maximum 4 points (degree+1)
 let kzg = Kzg::trusted_setup(5);
