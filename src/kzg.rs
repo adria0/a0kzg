@@ -1,31 +1,39 @@
 use bls12_381::*;
 use super::poly::Poly;
 use rand::Rng;
+pub use bls12_381::Scalar;
 
 pub struct KZG {
     pow_tau_g1 : Vec<G1Projective>,
     pow_tau_g2 : Vec<G2Projective>,
 }
 
-pub struct OnePointProof {
-    commitment : G1Projective,
-    pi : G1Projective,
-}
+pub type Proof = G1Projective;
+pub type Commitment = G1Projective;
 
 impl KZG {
-    fn rand_scalars(len: usize) -> Vec<Scalar> {
-        let mut rng = rand::thread_rng();
-        let mut v = Vec::new();
-        for _ in 0..len {
-            let r : [u64;4]=[rng.gen(), rng.gen(), rng.gen(), rng.gen()];
-            v.push(Scalar::from_raw(r));
-        }
-        v
+    fn eval_at_tau_g1(&self, poly: &Poly) -> G1Projective {
+        poly.0.iter()
+            .enumerate()
+            .fold(G1Projective::identity(), |acc, (n,k)| acc + self.pow_tau_g1[n]*k)
+    }
+
+    fn eval_at_tau_g2(&self, poly: &Poly) -> G2Projective {
+        poly.0.iter()
+            .enumerate()
+            .fold(G2Projective::identity(), |acc, (n,k)| acc + self.pow_tau_g2[n]*k)
+    }
+
+    fn z_poly_of(points: &[(Scalar,Scalar)]) -> Poly {
+        points.iter().fold(
+            Poly::one(),
+            |acc,(z,_y)| &acc * &Poly::new(vec![-z,Scalar::one()]))
     }
 
     pub fn trusted_setup(n : usize) -> Self {
-        
-        let tau = Scalar::from(Self::rand_scalars(1)[0]);
+        let mut rng = rand::thread_rng();
+        let rnd : [u64;4]=[rng.gen(), rng.gen(), rng.gen(), rng.gen()];
+        let tau = Scalar::from_raw(rnd);
         
         let pow_tau_g1 : Vec<G1Projective> = (0..n).into_iter()
             .scan(Scalar::one(), |acc,_| { let v = acc.clone(); *acc *= tau; Some(v) } )
@@ -40,38 +48,52 @@ impl KZG {
         Self { pow_tau_g1, pow_tau_g2 }
     }
 
-    pub fn prove_one(&self, z : Scalar, y : Scalar ) -> OnePointProof {
-        let rand = Self::rand_scalars(2);
-        let p = Poly::lagrange(&vec![
-            (z,y),
-            (rand[0],rand[1]),
-        ]);    
-
-        let commitment = p.0.iter()
-            .enumerate()
-            .fold(G1Projective::identity(), |acc, (n,p)| acc + self.pow_tau_g1[n]*p);
+    /// generate a polinomial and its commitment from a `set` of points
+    #[allow(non_snake_case)]
+    pub fn poly_commitment_from_set(&self, set: &[(Scalar, Scalar)]) -> (Poly,Commitment) {
+        let poly = Poly::lagrange(set);
+        let commitment = self.eval_at_tau_g1(&poly);
         
-        // q_zy = ( p - y ) / (x-z)
-        let mut p2 = p.clone();
-        p2 -= &Poly::new(vec![y]);
-        let (q, remainder) = p2.div(&Poly::new(vec![-z,Scalar::one()]));
-        assert!(remainder.is_zero());
-
-        let pi = q.0.iter()
-            .enumerate()
-            .fold(G1Projective::identity(), |acc, (n,k)| acc + self.pow_tau_g1[n]*k);
-
-        OnePointProof{commitment, pi}
+        (poly,commitment)
     }
 
-    pub fn verify_one(&self, z: Scalar, y: Scalar, proof : &OnePointProof) -> bool {
+    /// Generates a proof that `points` exists in `set`
+    #[allow(non_snake_case)]
+    pub fn prove(&self, poly: &Poly, points: &[(Scalar, Scalar)]) -> Proof {
+        // compute a lagrange poliomial I that have all the points to proof that are in the set 
+        // compute the polinomial Z that has roots (y=0) in all x's of I,
+        //   so this is I=(x-x0)(x-x1)...(x-xn)
+        let I = Poly::lagrange(points);
+        let Z = Self::z_poly_of(&points);
+
+        // now compute that Q = ( P - I(x) ) / Z(x)
+        // also check that the division does not have remainder 
+        let mut poly = poly.clone();
+        poly -= &I;
+        let (Q, remainder) = poly.div(&Z);
+        assert!(remainder.is_zero());
+
+        // the proof is evaluating the Q at tau in G1  
+        let pi = self.eval_at_tau_g1(&Q);
+
+        pi
+    }
+
+    /// Verifies that `points` exists in `proof`
+    /// is the duty of the caller to check if `proof.commitment` belongs
+    ///    to the full set 
+    #[allow(non_snake_case)]
+    pub fn verify(&self, commitment: &G1Projective, points: &[(Scalar, Scalar)], proof : &G1Projective) -> bool {
+        let I = Poly::lagrange(points);
+        let Z = Self::z_poly_of(&points);
+
         let e1 = pairing(
-            &proof.pi.into(),
-            &(self.pow_tau_g2[1] - G2Affine::generator() * z).into()
+            &proof.into(),
+            &self.eval_at_tau_g2(&Z).into()
         );
         
         let e2 = pairing(
-            &(proof.commitment - G1Affine::generator() * y).into(),
+            &(commitment - self.eval_at_tau_g1(&I)).into(),
             &G2Affine::generator()
         );
         return e1 == e2;
@@ -79,11 +101,21 @@ impl KZG {
 }
 
 #[test]
-fn test_simple_proof() {
-    let kzg = KZG::trusted_setup(3);
-    let proof = kzg.prove_one(Scalar::from(5), Scalar::from(9));
-    assert!(kzg.verify_one(Scalar::from(5), Scalar::from(9), &proof));
-    assert!(!kzg.verify_one(Scalar::from(6), Scalar::from(9), &proof));
-    assert!(!kzg.verify_one(Scalar::from(5), Scalar::from(8), &proof));
-    assert!(!kzg.verify_one(Scalar::from(51), Scalar::from(91), &proof));
+fn test_multi_proof() {
+    let kzg = KZG::trusted_setup(5);
+    let set = vec![
+        (Scalar::from(1), Scalar::from(2)),
+        (Scalar::from(2), Scalar::from(3)),
+        (Scalar::from(3), Scalar::from(4)),
+        (Scalar::from(4), Scalar::from(57))
+    ];
+    let (p,c) = kzg.poly_commitment_from_set(&set);
+
+    let proof01 = kzg.prove(&p, &vec![set[0].clone(),set[1].clone()]);
+    assert!(kzg.verify(&c, &vec![set[0].clone(),set[1].clone()], &proof01));
+    assert!(!kzg.verify(&c, &vec![set[0].clone()], &proof01));
+    assert!(!kzg.verify(&c, &vec![set[0].clone(),set[2].clone()], &proof01));
+
+    let proof0123 = kzg.prove(&p, &set);
+    assert!(kzg.verify(&c, &set, &proof0123));
 }
