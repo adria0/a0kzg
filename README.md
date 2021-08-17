@@ -1,4 +1,7 @@
 # learning-kate
+[![Crates.io](https://img.shields.io/crates/v/a0kzg.svg)](https://crates.io/crates/a0kzg)
+[![CI](https://github.com/adria0/a0kzg/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/adria0/a0kzg/actions/workflows/ci.yml)
+
 Kate-Zaverucha-Goldberg polynomial commitments in rust playground
 
 This is just-for-learning, so **do not use in production** of KZG commitments in rust, the
