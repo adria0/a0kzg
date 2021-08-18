@@ -1,6 +1,7 @@
 # learning-kate
-[![Crates.io](https://img.shields.io/crates/v/a0kzg.svg)](https://crates.io/crates/a0kzg)
 [![CI](https://github.com/adria0/a0kzg/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/adria0/a0kzg/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/a0kzg.svg)](https://crates.io/crates/a0kzg)
+![docs.rs](https://img.shields.io/docsrs/a0kzg)
 
 Kate-Zaverucha-Goldberg polynomial commitments in rust playground
 
